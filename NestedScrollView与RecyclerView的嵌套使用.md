@@ -1,3 +1,7 @@
+---
+title: NestedScrollView与RecyclerView的嵌套使用
+---
+
 ![ScreenRecord.gif](https://upload-images.jianshu.io/upload_images/2120696-a53dfb832b97370d.gif?imageMogr2/auto-orient/strip)
 
 
@@ -122,4 +126,4 @@ dx和dy都要减去父控件消耗的距离，如果父控件把滑动距离全�
 
 另外还遇到个问题，NestedScrollView嵌套RecyclerView时，固定高度后打开界面时会自动滑到底部。只需要在NestedScrollView的子view中加入        android:descendantFocusability="blocksDescendants"
 
-最后 [demo地址 ](https://github.com/jeffreyhappy/demoCollection/tree/master/NestScrollDemo) 
+最后 [demo地址 ](https://github.com/jeffreyhappy/demoCollection/tree/master/NestScrollDemo)

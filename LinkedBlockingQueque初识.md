@@ -1,3 +1,7 @@
+---
+title: LinkedBlockingQueque初识
+---
+
 LinkedBlockingQueque是个线程安全的队列，先进先出，插入的时候从尾部添加，获取的时候从头部获取，里面维护了一个单项链表
 
 然而我看了下他的出队操作  

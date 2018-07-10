@@ -1,3 +1,7 @@
+---
+title: Android  DialogFragment在项目中的基本使用
+---
+
 app打开dialogFragment后 statusbar颜色会不对。正好来复习下DialogFragment的使用，以巩固下基础
 
 

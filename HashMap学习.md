@@ -1,4 +1,8 @@
-##HashMap
+---
+title: HashMap学习
+---
+
+## HashMap
 这个实现对get和put提供了固定时间的性能
 迭代完全部集合的时间是与HashMap的容量+键值对的长度是正相关的。所以，如果对迭代性能要求很高的话不要吧初始容量设置过高或者load factor太低
 
@@ -9,9 +13,8 @@ load factor ：是一个度量，在容量自动增长之前，hash table允许�
 当hash table中的条目超过了 load factor 乘以 当前capacity，hash table将会重新hash（就是说，内部数据结构将会重建），这样的话 hash table的代销将会差不多翻倍
 默认的loadFactor是 0.75f
 
-######构造函数
+###### 构造函数
 ```
-
 /**
  * Constructs an empty <tt>HashMap</tt> with the default initial capacity
  * (16) and the default load factor (0.75).
@@ -45,7 +48,7 @@ public HashMap(int initialCapacity, float loadFactor) {
 
 
 
-######构造函数中的阀值初始化
+###### 构造函数中的阀值初始化
 ```
 /**
     * Returns a power of two size for the given target capacity.
@@ -60,6 +63,7 @@ public HashMap(int initialCapacity, float loadFactor) {
        return (n < 0) ? 1 : (n >= MAXIMUM_CAPACITY) ? MAXIMUM_CAPACITY : n + 1;
    }
 ```
+
 这里>>>是无符号的右位移，>>>1就是有位移1位
 10 >>> 1   分解下
 10的二进制是1010
@@ -75,6 +79,7 @@ public HashMap(int initialCapacity, float loadFactor) {
 
 
 |是位或但是看完还是很难理解打印下就能理解了
+
 ```
 testHash((int) (Math.pow(2,12) +1));
 
@@ -104,6 +109,7 @@ testHash 8 : 1111111111111
 testHash 16 : 1111111111111
 start 8191 1111111111111
 ```
+
 这里的输出就是 2^cap的二次方长度-1
 
 
@@ -122,7 +128,7 @@ static final int hash(Object key) {
 
 
 
-####放入key，value
+#### 放入key，value
 在放入key，value时，走的是 final V putVal(int hash, K key, V value, boolean onlyIfAbsent,boolean evict)  
 
 看下定义的局部变量
@@ -200,7 +206,7 @@ final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
 ```
 
 
-######tab[i = (n - 1) & hash]
+###### tab[i = (n - 1) & hash]
 tab[i = (n - 1) & hash]大有名堂。
 例如：当n就是初始化DEFAULT_INITIAL_CAPACITY的长度的时候
 1.  DEFAULT_INITIAL_CAPACITY = 1 << 4，二进制为 10000 十进制为 16  
@@ -213,7 +219,7 @@ tab[i = (n - 1) & hash]大有名堂。
 1.  所以任你hash是多大(n - 1) & hash完了后十进制的值永远是 0 ~ 2的n次方-1，永远在数组范围内。
 
 
-######创建table数组
+###### 创建table数组
 这里有个关键参数 threshold 在putVal中
 ```
 if (++size > threshold)
@@ -344,7 +350,7 @@ final Node<K,V>[] resize() {
         return newTab;
     }
 ```
-#####通过key读取value
+##### 通过key读取value
 读取就没那么多套路了
 ```
 public V get(Object key) {

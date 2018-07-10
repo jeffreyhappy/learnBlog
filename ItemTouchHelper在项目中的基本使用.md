@@ -1,3 +1,7 @@
+---
+title: ItemTouchHelper在项目中的基本使用
+---
+
 看到汽车之家出了个新界面，我们需要抄一下。那就开始抄吧，界面如下：
 
 ![demo_car_home_20170726161156.gif](http://upload-images.jianshu.io/upload_images/2120696-e8b2564d1e56b27f.gif?imageMogr2/auto-orient/strip)

@@ -1,3 +1,7 @@
+---
+title: PorterDuffColorFilter在项目中的基本使用
+---
+
 有时候标题栏会浮在内容之上，而内容会有颜色的变化，这时候就要求标题栏能够变化透明度，标题栏中的图片能够变化颜色。看下效果，如下图：
 
 ![video.mp4_1488200822.gif](http://upload-images.jianshu.io/upload_images/2120696-a9cc732449f78e8e.gif?imageMogr2/auto-orient/strip)

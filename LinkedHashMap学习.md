@@ -1,3 +1,6 @@
+---
+title: LinkedHashMap学习
+---
 #LinkedHashMap
 继承自HashMap实现了Map接口，使用上和HashMap一样，看名字就知道内部使用了链表
 
