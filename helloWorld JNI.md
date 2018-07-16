@@ -1,5 +1,5 @@
 ---
-title: HashMap学习
+title: helloWorld JNI
 date: 2018/7/12 10:51
 ---
 ## hello world JNI
