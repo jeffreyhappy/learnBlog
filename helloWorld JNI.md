@@ -227,8 +227,20 @@ add_library( # Sets the name of the library.
 ```
 8. 在运行就可以了
 
-
-
+9. 之前在CMakelist.txt里有个log-lib,其实还是非常有用的.c代码也需要打印日志的,这个就是用来在Logcat中打印日志的
+##### 原生log的使用
+1. 引入头文件
+```
+#include "android/log.h"
+```
+2. 使用
+第一个参数是日志级别,ANDROID_LOG_INFO对应java中的Log.i
+第二个参数是TAG,Log.i(TAG,.....)
+第三个参数是可变长参数,与sprintf的用法类似,先给一个格式化字符串,后面是字符串填值
+```
+__android_log_print(ANDROID_LOG_INFO,"native-lib","write %ld",size);
+```
+3. 在Logcat中就可以看到对应的日志了
 
 
 #### 感想
