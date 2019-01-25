@@ -272,6 +272,146 @@ sDefaultExecutor¾ÍÊÇÕâ¸öSerialExecutorÀà,²¢ÇÒËû»¹ÊÇ¸östatic,¶ÔÓÚÕâ¸öjvm¾ÍÕâÒ»¸öÖ
         return this;
     }
 ```
+×îºó¸½ÉÏÎÒÄ£·ÂĞ´µÄ¼òÂª°æAsyncTask
+```
+public abstract class MyTask<Params,Progress,Result>{
 
+    private final int POST_PROGRESS = 1;
+    private final int POST_RESULT   = 2;
+    private Params[] params;
+    //Õâ¸öÓÃÀ´ÔÚ×ÓÏß³ÌÔËĞĞµÄ,»¹ĞèÒª¸öhandlerÍùÖ÷Ïß³Ì»ØÅ×
+    //Õâ¸ö²»ÊÇ°´Ë³ĞòÔËĞĞµÄ,µÈÏÂĞèÒª¸ÄÏÂ
+    private static ThreadPoolExecutor threadPoolExecutor;
+
+    //Õâ¸öhandlerÍùÖ÷Ïß³ÌÅ×
+    private Handler handler;
+
+    static {
+        int process = Runtime.getRuntime().availableProcessors();
+        int coreNum = Math.max(2,Math.min(4,process-1));
+        BlockingQueue<Runnable> blockingQueue = new LinkedBlockingQueue<>(100);
+        threadPoolExecutor = new ThreadPoolExecutor(coreNum, 100, 30, TimeUnit.SECONDS, blockingQueue, new ThreadFactory() {
+            AtomicInteger atomicInteger = new AtomicInteger();
+            @Override
+            public Thread newThread(@NonNull Runnable r) {
+                return new Thread(r,"MyTask# " + atomicInteger.incrementAndGet());
+            }
+        });
+        threadPoolExecutor.allowCoreThreadTimeOut(true);
+
+    }
+    //Ïß³Ì³ØÊÇ¹²ÏíµÄ,µ«Ò»¸öAsyncÖ»ÔËĞĞÒ»¸öÈÎÎñ,ËùÒÔfutureTaskÔÚ³õÊ¼»¯µÄÊ±ºò¸³Öµ
+    FutureTask<Result> futureTask;
+    Callable<Result> workCallable;
+
+    void exec(Params... params){
+        //ĞèÒªÒ»¸ötask,À´Íê³ÉÁ÷³Ì
+        //AsyncTaskÈçºÎ¼àÌıÈÎÎñµÄ×´Ì¬µÄ?ÓÃFutureTask
+
+        this.params = params;
+        threadPoolExecutor.execute(futureTask);
+    }
+
+
+    public MyTask(){
+        Looper looper = Looper.myLooper();
+        if (looper == null){
+            looper = Looper.getMainLooper();
+        }
+        handler = new Handler(looper){
+            @Override
+            public void handleMessage(Message msg) {
+                super.handleMessage(msg);
+                switch (msg.what){
+                    case POST_PROGRESS:
+                        onProgress((Progress) msg.obj);
+                        break;
+                    case POST_RESULT:
+                        onResult((Result) msg.obj);
+                        break;
+                }
+            }
+        };
+        workCallable = new Callable<Result>() {
+            @Override
+            public Result call() throws Exception {
+                Result result = null;
+                try {
+                    result =  doInBackground(params);
+                }catch (Throwable t){
+                    Log.d("MyTask","workCallable throwable " + t);
+                }finally {
+                    postResult(result);
+                }
+                return result;
+            }
+        };
+        futureTask = new FutureTask<Result>(workCallable){
+            @Override
+            protected void done() {
+                try {
+                   Result result =   get();
+                } catch (ExecutionException e) {
+                    Log.d("MyTask","futureTask done ExecutionException " + e);
+                    e.printStackTrace();
+                } catch (InterruptedException e) {
+                    Log.d("MyTask","futureTask done InterruptedException " + e);
+                    e.printStackTrace();
+                } catch (CancellationException e){
+                    Log.d("MyTask","futureTask done CancellationException " + e);
+                    e.printStackTrace();
+                }
+                Log.d("MyTask","futureTask done");
+
+                super.done();
+            }
+        };
+    }
+
+
+    abstract void  onProgress(Progress progress);
+
+    abstract Result doInBackground(Params... params);
+    abstract void onResult(Result result);
+
+    protected void postProgress(Progress progress){
+        handler.obtainMessage(POST_PROGRESS,progress).sendToTarget();
+    }
+
+    private void postResult(Result result){
+        handler.obtainMessage(POST_RESULT,result).sendToTarget();
+
+    }
+    public void cancel(){
+        futureTask.cancel(true);
+    }
+
+}
+```
+²âÊÔ
+```
+		myTask = new MyTask<Integer, Integer, Integer>() {
+            @Override
+            void onProgress(Integer integer) {
+                Log.d("MyTask","onProgress " + Thread.currentThread().getName());
+            }
+
+            @Override
+            Integer doInBackground(Integer... params) {
+                Log.d("MyTask","doInBackground " +Thread.currentThread().getName());
+                int result = 0;
+                for (int i = 0 ; i < 10 ; i++){
+                    postProgress(i);
+                }
+                return result;
+            }
+
+            @Override
+            void onResult(Integer integer) {
+                Log.d("MyTask","onResult " + Thread.currentThread().getName());
+            }
+        };
+        myTask.exec(1,2);
+```
 
 
