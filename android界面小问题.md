@@ -103,3 +103,44 @@ xml
         android:layout_width="100dp"
         android:layout_height="40dp" />
 ```
+
+
+### 改release包的名字
+
+```
+//获取git的commit号
+def getGitCommit() {
+    def gitDir = new File("${new File("${rootDir}").getParent()}/.git")
+    if (!gitDir.isDirectory()) {
+        return 'non-git-build'
+    }
+
+    def cmd = 'git rev-parse HEAD'
+    def gitCommit = cmd.execute().text.trim()
+    return gitCommit
+}
+
+def buildTime() {
+    def date = new Date()
+    def formattedDate = date.format('yyyyMMdd')
+    return formattedDate
+}
+
+
+
+    //自动生成指定名称的release发布版的 apk文件
+    android.applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "vss_v${defaultConfig.versionName}_${buildTime()}.apk"
+        }
+    }
+
+
+
+    //配合flavor是这样写
+    android.applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "vss_v${defaultConfig.versionName}_${variant.productFlavors[0].name}_${buildTime()}.apk"
+        }
+    }
+```

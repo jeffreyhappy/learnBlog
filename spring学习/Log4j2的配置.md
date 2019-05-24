@@ -156,3 +156,4 @@ public class ReadingListController {
 }
 
 ```
+访问这个controller就可以看到日志同时打印到了控制台和文件中
