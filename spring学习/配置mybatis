@@ -1,0 +1,172 @@
+mybatis的官方文档 http://www.mybatis.org/spring-boot-starter/mybatis-spring-boot-autoconfigure/
+
+pom的配置
+```
+        <dependency>
+			<groupId>mysql</groupId>
+			<artifactId>mysql-connector-java</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.mybatis.spring.boot</groupId>
+			<artifactId>mybatis-spring-boot-starter</artifactId>
+			<version>2.0.1</version>
+		</dependency>
+```
+
+
+
+yml的配置
+这里的mapper-locations有点疑问
+```
+server:
+  port: 8000
+
+
+logging:
+  config: classpath:log4j2.xml
+
+
+spring:
+  profiles:
+    active: local
+  datasource:
+    name: local
+    driver-class-name: com.mysql.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/demo?autoReconnect=true&useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=CONVERT_TO_NULL&useSSL=false&serverTimezone=CTT
+    username: root
+    password: root
+
+mybatis:
+  type-aliases-package: com.example.domain.model
+  # 目前只会把mapper文件放到resource里面,应该更好的是放到java里面
+  mapper-locations: classpath:mapper/*.xml
+  # mapper-locations: classpath:com/example/demo/mapper/mapping/*.xml
+
+---
+spring:
+  profiles: product
+
+img-config:
+  imageDirPath: myAmazonId-product
+
+
+---
+spring:
+  imageDirPath: local
+
+img-config:
+  imageDirPath: D:\tmp_img
+
+
+
+```
+
+对应的pojo
+```
+public class User {
+    private int id;
+    private String name;
+    private int role;
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public int getRole() {
+        return role;
+    }
+
+    public void setRole(int role) {
+        this.role = role;
+    }
+}
+
+```
+
+对应的mapper
+```
+@Mapper
+public interface UserDao {
+    User getUserById(@Param("id") int id);
+}
+
+```
+和xml
+```
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.demo.mapper.UserDao">
+
+    <!--这里的返回要写全路径名,之前没写全路径报错了-->
+    <select id="getUserById" resultType="com.example.demo.model.User">
+        SELECT
+        id,
+        name,
+        role
+        FROM tb_user
+        WHERE id = #{id}
+    </select>
+
+</mapper>
+
+
+```
+
+最后要在Application里面加入 @MapperScan 开启扫描
+```
+@SpringBootApplication
+@MapperScan
+public class DemoApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(DemoApplication.class, args);
+	}
+
+}
+
+```
+
+搞个controller测试下就可以了
+```
+@RequestMapping(value = "/get_user", method = RequestMethod.GET)
+    public User getUser() {
+        User user = userDao.getUserById(1);
+        return user;
+    }
+```
+
+
+其实用注解的方式更简单,一个dao类和一个pojo就可以了
+```
+@Mapper
+public interface BookDao {
+
+    @Insert("insert into tb_book(book_name,book_content) values (#{name},#{content})")
+    void insert(String name,String content);
+
+    @Results({
+            @Result(property = "id",column = "id"),
+            @Result(property = "name",column = "book_name"),
+            @Result(property = "content",column = "book_content"),
+    })
+    @Select("select * from tb_book where book_name=#{book_name} limit 1")
+    List<Book> getBookByName(String name);
+
+}
+```

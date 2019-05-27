@@ -1,0 +1,214 @@
+教程在  https://spring.io/guides/gs/uploading-files/
+
+
+考虑到开发环境和生产环境不一样,要用到profile, application.yml配置如下
+```
+server:
+  port: 8000
+
+
+logging:
+  config: classpath:log4j2.xml
+
+
+spring:
+  profiles:
+    active: local
+
+---
+spring:
+  profiles: product
+
+img-config:
+  imageDirPath: todo
+
+
+---
+spring:
+  imageDirPath: local
+
+img-config:
+  imageDirPath: D:\tmp_img
+
+```
+
+搞一个java类来读取属性
+```
+@Component
+@ConfigurationProperties(prefix = "img-config")
+public class ImageConfigProperties {
+    private String imageDirPath;
+
+    public String getImageDirPath() {
+        return imageDirPath;
+    }
+
+    public void setImageDirPath(String imageDirPath) {
+        this.imageDirPath = imageDirPath;
+    }
+}
+
+```
+
+文件的controller
+```
+@Controller
+@RequestMapping("/file")
+public class FileController {
+
+    Logger logger = LogManager.getLogger(FileController.class.getName());
+
+    @Autowired
+    ImageConfigProperties imageConfigProperties;
+
+
+    @RequestMapping("/index")
+    public ModelAndView fileIndex(){
+        ModelAndView modelAndView = new ModelAndView("file_index");
+        modelAndView.addObject("name","hello from controller");
+        return modelAndView;
+    }
+
+    @RequestMapping(path = "/upload_file" ,method = RequestMethod.POST)
+    public String fileUpload(@RequestParam("f_img") MultipartFile f_img,@RequestParam("f_name") String f_name){
+
+        logger.info("fileUpload " + f_name + "  " + f_img.getOriginalFilename());
+        try {
+            File imgFile = new File(imageConfigProperties.getImageDirPath(), f_img.getOriginalFilename());
+            FileOutputStream fileInputStream = new FileOutputStream(imgFile);
+            byte[] buffer = new byte[1024];
+            InputStream inputStream = f_img.getInputStream();
+            int readNum = -1;
+            while ( -1 !=  (readNum =inputStream.read(buffer))){
+                fileInputStream.write(buffer,0,readNum);
+            }
+            fileInputStream.close();
+            inputStream.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return "redirect:/file/upload?uploaded_img=" + f_img.getOriginalFilename();
+    }
+
+
+    @RequestMapping(path = "/upload" ,method = RequestMethod.GET)
+    public ModelAndView upload(@RequestParam(value = "uploaded_img",required = false)String uploaded_img){
+
+//        logger.info("fileUpload " + f_name);
+        ModelAndView modelAndView = new ModelAndView("file_upload");
+        modelAndView.addObject("uploaded_img","/file/files/"+uploaded_img);
+        return modelAndView;
+    }
+
+
+    @GetMapping("/files/{filename:.+}")
+    @ResponseBody
+    public ResponseEntity<Resource> serveFile(@PathVariable String filename) {
+        Path path = Paths.get(imageConfigProperties.getImageDirPath(),filename);
+        Resource file = null;
+        try {
+            file = new UrlResource(path.toUri());
+            if (!file.exists() || !file.isReadable()){
+                ResponseEntity.notFound();
+            }
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        }
+        return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"" + file.getFilename() + "\"").body(file);
+    }
+
+
+}
+```
+
+
+```
+
+@Controller
+@RequestMapping("/file")
+public class FileController {
+
+    Logger logger = LogManager.getLogger(FileController.class.getName());
+
+    @Autowired
+    ImageConfigProperties imageConfigProperties;
+
+
+    @RequestMapping("/index")
+    public ModelAndView fileIndex(){
+        ModelAndView modelAndView = new ModelAndView("file_index");
+        modelAndView.addObject("name","hello from controller");
+        return modelAndView;
+    }
+
+    /**
+     * 表单上传的处理
+     * @param f_img
+     * @param f_name
+     * @return
+     */
+    @RequestMapping(path = "/upload_file" ,method = RequestMethod.POST)
+    public String fileUpload(@RequestParam("f_img") MultipartFile f_img,@RequestParam("f_name") String f_name){
+
+        logger.info("fileUpload " + f_name + "  " + f_img.getOriginalFilename());
+        try {
+            File imgFile = new File(imageConfigProperties.getImageDirPath(), f_img.getOriginalFilename());
+            FileOutputStream fileInputStream = new FileOutputStream(imgFile);
+            byte[] buffer = new byte[1024];
+            InputStream inputStream = f_img.getInputStream();
+            int readNum = -1;
+            while ( -1 !=  (readNum =inputStream.read(buffer))){
+                fileInputStream.write(buffer,0,readNum);
+            }
+            fileInputStream.close();
+            inputStream.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        /**
+         * 上传完了,还是返回到上传页面,并把图片显示出来
+         */
+        return "redirect:/file/upload?uploaded_img=" + f_img.getOriginalFilename();
+    }
+
+
+    /**
+     * 准备上传的页面
+     * @param uploaded_img
+     * @return
+     */
+    @RequestMapping(path = "/upload" ,method = RequestMethod.GET)
+    public ModelAndView upload(@RequestParam(value = "uploaded_img",required = false)String uploaded_img){
+
+        ModelAndView modelAndView = new ModelAndView("file_upload");
+        modelAndView.addObject("uploaded_img","/file/files/"+uploaded_img);
+        return modelAndView;
+    }
+
+
+    /**
+     * 通过get请求,获取文件名字,然后返回对应的资源
+     * @param filename
+     * @return
+     */
+    @GetMapping("/files/{filename:.+}")
+    @ResponseBody
+    public ResponseEntity<Resource> serveFile(@PathVariable String filename) {
+        Path path = Paths.get(imageConfigProperties.getImageDirPath(),filename);
+        Resource file = null;
+        try {
+            file = new UrlResource(path.toUri());
+            if (!file.exists() || !file.isReadable()){
+                ResponseEntity.notFound();
+            }
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        }
+        return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"" + file.getFilename() + "\"").body(file);
+    }
+
+
+}
+```
