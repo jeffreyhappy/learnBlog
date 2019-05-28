@@ -1,0 +1,157 @@
+官网链接 https://shiro.apache.org/spring-boot.html
+
+可以看看这个文章的配置项 https://segmentfault.com/a/1190000014479154?utm_source=tag-newest
+
+
+依赖
+
+```
+	<dependency>
+			<groupId>org.apache.shiro</groupId>
+			<artifactId>shiro-spring-boot-web-starter</artifactId>
+			<version>1.4.1</version>
+		</dependency>
+```
+
+
+配置
+```
+
+@Configuration
+public class ShiroConfig {
+
+
+    @Bean
+    public Realm realm() {
+        return new CustomRealm();
+    }
+
+    /**
+     * 这个应该是那些路径对应那些权限
+     * @return
+     */
+    @Bean
+    public ShiroFilterChainDefinition shiroFilterChainDefinition() {
+        DefaultShiroFilterChainDefinition chainDefinition = new DefaultShiroFilterChainDefinition();
+
+        // logged in users with the 'admin' role
+        chainDefinition.addPathDefinition("/admin/**", "authc, roles[10]");
+        chainDefinition.addPathDefinition("/book/**", "authc, roles[1]");
+        chainDefinition.addPathDefinition("/blog/**", "authc, perms[admin]");
+
+        // logged in users with the 'document:read' permission
+        chainDefinition.addPathDefinition("/docs/**", "authc, perms[document:read]");
+
+
+        // all other paths require a logged in user
+        chainDefinition.addPathDefinition("/**", "anon");
+        return chainDefinition;
+    }
+
+}
+```
+具体的登录授权,路径权限都在realm里,我这里就简单的用1代表普通用户,10 代表admin
+```
+
+public class CustomRealm extends AuthorizingRealm {
+
+    Logger logger = LogManager.getLogger(CustomRealm.class);
+    /**
+     * 权限认证
+     */
+    @Override
+    protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principalCollection) {
+        logger.info("doGetAuthorizationInfo principalCollection start " );
+        String userName = (String) principalCollection.getPrimaryPrincipal();
+        logger.info("doGetAuthorizationInfo principalCollection " + userName);
+        UserService userDao = SpringContextHolder.getBean(UserService.class);
+        User user = userDao.getUserByName(userName);
+
+
+        Set<String> roleNameSet = new HashSet<>();
+        Set<String> permissionSet = new HashSet<>();
+        roleNameSet.add(user.getRole()+"");
+        if (user.getRole() == 1){
+            permissionSet.add("normal");
+        }else {
+            permissionSet.add("admin");
+        }
+
+        SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
+        info.addStringPermissions(permissionSet);
+        info.addRoles(roleNameSet);
+        return info;
+    }
+
+
+    /**
+     * 登录认证
+     */
+    @Override
+    protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken authenticationToken) throws AuthenticationException {
+        logger.info("doGetAuthorizationInfo AuthenticationToken start " );
+        UsernamePasswordToken token = (UsernamePasswordToken) authenticationToken;
+        String psw = new String(token.getPassword());
+        logger.info("doGetAuthorizationInfo AuthenticationToken start " + token.getUsername() + " psw " + psw);
+        UserService userDao = SpringContextHolder.getBean(UserService.class);
+        User user = userDao.getUserByName(token.getUsername());
+        if (user == null){
+            throw  new ShiroException("user not find");
+        }
+        if (!user.getPassword().equals(psw)){
+            throw  new ShiroException("password error");
+        }
+        //这里有些用用户名密码 有些用用户名和token
+        SimpleAuthenticationInfo simpleAuthenticationInfo = new SimpleAuthenticationInfo(user.getName(),user.getPassword(),super.getName());
+        return simpleAuthenticationInfo;
+    }
+}
+```
+
+这样就配置好了,接下来需要登录
+
+
+```
+
+@Controller
+public class LoginController {
+
+
+    @RequestMapping("login")
+    public  ModelAndView login(){
+         return new ModelAndView("login")
+                .addObject("username", "")
+                .addObject("message", "")
+                .addObject("password", "");
+    }
+
+
+    /**
+     * shiro框架登录
+     */
+    @RequestMapping(value = "/login_action",method= RequestMethod.POST)
+    public ModelAndView login(@RequestParam("username") String username,@RequestParam("password") String password){
+        // 表面校验
+        if(Validate.isEmpty(username) || Validate.isEmpty(password)){
+            return new ModelAndView("login")
+                    .addObject("message", "账号或密码不能为空")
+                    .addObject("username", username)
+                    .addObject("password", password);
+        }
+        // 获取主体
+        Subject subject = SecurityUtils.getSubject();
+        try{
+            // 调用安全认证框架的登录方法
+            subject.login(new UsernamePasswordToken(username, password));
+        }catch(AuthenticationException ex){
+            System.out.println("登陆失败: " + ex.getMessage());
+            return new ModelAndView("login")
+                    .addObject("message", ex.getMessage())
+                    .addObject("username", username)
+                    .addObject("password", password);
+        }
+        // 登录成功后重定向到首页
+        return new ModelAndView("redirect:/index");
+    }
+}
+```
