@@ -385,7 +385,9 @@ private List<SubscriberMethod> findUsingInfo(Class<?> subscriberClass) {
 上面找到对应的订阅信息后,然后遍历保存起来,这里涉及了Subscription,Subscription就是封装了订阅者的对象和订阅者中的订阅方法
 ```
 final class Subscription {
+    //订阅对象,例如xxxActivity
     final Object subscriber;
+    //订阅方法,里面包含了方法,参数,优先级等等
     final SubscriberMethod subscriberMethod;
     /**
      * Becomes false as soon as {@link EventBus#unregister(Object)} is called, which is checked by queued event delivery
@@ -455,8 +457,11 @@ final class Subscription {
 ```
 这里涉及到
 ```
+    //key是发送事件的类信息,value是Subscription列表,一个事件类,绑定的订阅信息
     private final Map<Class<?>, CopyOnWriteArrayList<Subscription>> subscriptionsByEventType;
+    //key是订阅对象,例如xxxActivity,value是发送事件的类列表,这个订阅对象绑定了多少个事件类
     private final Map<Object, List<Class<?>>> typesBySubscriber;
+    //key是发送事件类信息,value是发送事件对象
     private final Map<Class<?>, Object> stickyEvents;
 
 ```
@@ -529,6 +534,7 @@ private boolean postSingleEventForEventType(Object event, PostingThreadState pos
         synchronized (this) {
             subscriptions = subscriptionsByEventType.get(eventClass);
         }
+        //知道了对应的subscriptions,就可以遍历抛出去
         if (subscriptions != null && !subscriptions.isEmpty()) {
             for (Subscription subscription : subscriptions) {
                 postingState.event = event;
@@ -552,6 +558,56 @@ private boolean postSingleEventForEventType(Object event, PostingThreadState pos
     }
 
 ```
+根据线程类型抛出去,正常我们就是用MAIN和BACKGROUND
+MAIN:如果post线程是main,就直接invokeSubscriber,否则就往主线程队列里塞入
+BACKGROUND:如果post线程是main,就往子线程队列里塞入,否则直接调用
+```
+private void postToSubscription(Subscription subscription, Object event, boolean isMainThread) {
+        switch (subscription.subscriberMethod.threadMode) {
+            case POSTING:
+                invokeSubscriber(subscription, event);
+                break;
+            case MAIN:
+                if (isMainThread) {
+                    invokeSubscriber(subscription, event);
+                } else {
+                    mainThreadPoster.enqueue(subscription, event);
+                }
+                break;
+            case BACKGROUND:
+                if (isMainThread) {
+                    backgroundPoster.enqueue(subscription, event);
+                } else {
+                    invokeSubscriber(subscription, event);
+                }
+                break;
+            case ASYNC:
+                asyncPoster.enqueue(subscription, event);
+                break;
+            default:
+                throw new IllegalStateException("Unknown thread mode: " + subscription.subscriberMethod.threadMode);
+        }
+    }
+```
+最终调用具体方法的地方
+```
+void invokeSubscriber(Subscription subscription, Object event) {
+        try {
+            subscription.subscriberMethod.method.invoke(subscription.subscriber, event);
+        } catch (InvocationTargetException e) {
+            handleSubscriberException(subscription, event, e.getCause());
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("Unexpected exception", e);
+        }
+    }
+```
+subscription.subscriber是订阅者对象就是XXXactivity
+event就是post的事件对象
+```
+subscription.subscriberMethod.method.invoke(subscription.subscriber, event);
+```
+就是XXXactivity调用对应的订阅方法,这样流程就走完了
+
 
 
 
