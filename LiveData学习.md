@@ -314,7 +314,8 @@ public final void clear() {
 所以自定义ViewModel的时候,onCleared一定要重写,并清除一些引用
 
 ## LiveData的生命周期
-ViewMode的销毁我们知道了,是在Activity的OnDestory里,但是正常使用的LiveData的时候,也需要传入LifeCycle相关的东西
+ViewMode的销毁我们知道了,是在Activity的OnDestory里
+但是正常使用的LiveData的时候,也需要传入LifeCycle相关的东西,这里的LifeCycle又是什么作用呢?
 例如:
 ```
 numberModel.getNumbers().observe(this, new Observer<Integer>() {
@@ -327,7 +328,7 @@ numberModel.getNumbers().observe(this, new Observer<Integer>() {
 ### observer
 1. 当前生命周期DESTROYED就直接返回什么都不做了
 2. 将owner和observer包装起来
-3. 放进去
+3. 跟owner的生命周期回调绑定
 ```
     public void observe(@NonNull LifecycleOwner owner, @NonNull Observer<? super T> observer) {
         assertMainThread("observe");
@@ -389,7 +390,7 @@ class LifecycleBoundObserver extends ObserverWrapper implements GenericLifecycle
 GenericLifecycleObserver接口就一个方法onStateChanged,这个会在生命周期变动的时候回调,看看LifecycleBoundObserver这个的实现
 1. 如果DESTROYED,销毁了就移除观察者,否则就走activeStateChanged(shouldBeActive());
 2. shouldBeActive返回true的条件是当前的状态要大于等于start,对于activity的创建来说的话 onCreate,onStart,onResume,就从onStart开始就可以激活了
-3. activieStateChanged是ObserverWrapper的方法,看看ObserverWrapper
+3. activieStateChanged是ObserverWrapper的方法,看看ObserverWrapper,另外这是个内部类,内部类的好处是可以直接访问他所属类的方法
 ```
 private abstract class ObserverWrapper {
         final Observer<? super T> mObserver;
@@ -431,4 +432,117 @@ private abstract class ObserverWrapper {
     }
 ```
 4. ObserverWrapper就是包装了Observer,含有一个是否激活的状态,mLastVersion是记录数据改变的次数,如果数据变了就+1,为了防止同次数据多次抛出的
+5. activeStateChanged会判断当前是否有活动的observer和最新的状态来回调onActive,onInactive,这两个都是空方法,如果是活动的就要dispatchingValue
+```
+void dispatchingValue(@Nullable ObserverWrapper initiator) {
+        if (mDispatchingValue) {
+            mDispatchInvalidated = true;
+            return;
+        }
+        mDispatchingValue = true;
+        do {
+            mDispatchInvalidated = false;
+            //用initiator作为回调对象
+            if (initiator != null) {
+                considerNotify(initiator);
+                initiator = null;
+            } else {
+                //从观察者列表里,回调
+                for (Iterator<Map.Entry<Observer<? super T>, ObserverWrapper>> iterator =
+                        mObservers.iteratorWithAdditions(); iterator.hasNext(); ) {
+                    considerNotify(iterator.next().getValue());
+                    if (mDispatchInvalidated) {
+                        break;
+                    }
+                }
+            }
+        } while (mDispatchInvalidated);
+        mDispatchingValue = false;
+    }
+```
+这里就是真正抛出数据的地方,最后他们都是调用了considerNotify
+```
+private void considerNotify(ObserverWrapper observer) {
+        if (!observer.mActive) {
+            return;
+        }
+        // Check latest state b4 dispatch. Maybe it changed state but we didn't get the event yet.
+        //
+        // we still first check observer.active to keep it as the entrance for events. So even if
+        // the observer moved to an active state, if we've not received that event, we better not
+        // notify for a more predictable notification order.
+        if (!observer.shouldBeActive()) {
+            observer.activeStateChanged(false);
+            return;
+        }
+        if (observer.mLastVersion >= mVersion) {
+            return;
+        }
+        observer.mLastVersion = mVersion;
+        //noinspection unchecked
+        observer.mObserver.onChanged((T) mData);
+    }
+```
+回顾一下,入口是observer
+```
+public void observe(@NonNull LifecycleOwner owner, @NonNull Observer<? super T> observer)
+```
+1. 将owner和observer包装在一起叫做wrapper
+2. wrapper放入到observers(观察者表里)里,留待以后用
+3. wrapper在加入到生命周期观察的回调里,如果生命周期变化,会调用wrapper的onStateChanged
+4. 然后wrapper就根据对应的生命周期来处理数据和observer
+
+问: observe的开始和结束
+开始后结束都在wrapper的onStateChanged里
+```
+public void onStateChanged(LifecycleOwner source, Lifecycle.Event event) {
+            if (mOwner.getLifecycle().getCurrentState() == DESTROYED) {
+                removeObserver(mObserver);
+                return;
+            }
+            activeStateChanged(shouldBeActive());
+}
+```
+如果当前的生命周期已经销毁,就移除观察者
+其他的话,就根据生命周期做对应操作
+
+问:postValue和setValue有什么区别
+
+```
+@MainThread
+protected void setValue(T value) {
+        assertMainThread("setValue");
+        mVersion++;
+        mData = value;
+        dispatchingValue(null);
+}
+
+ protected void postValue(T value) {
+        boolean postTask;
+        synchronized (mDataLock) {
+            postTask = mPendingData == NOT_SET;
+            mPendingData = value;
+        }
+        if (!postTask) {
+            return;
+        }
+        ArchTaskExecutor.getInstance().postToMainThread(mPostValueRunnable);
+}
+
+private final Runnable mPostValueRunnable = new Runnable() {
+        @Override
+        public void run() {
+            Object newValue;
+            synchronized (mDataLock) {
+                newValue = mPendingData;
+                mPendingData = NOT_SET;
+            }
+            //noinspection unchecked
+            setValue((T) newValue);
+        }
+};
+```
+setValue要在主线程,直接就设置了mData并分发了数据
+postValue可以再子线程,然后通过线程切换还是调用的setValue
+
 
