@@ -400,3 +400,262 @@ return _helper;
 
 
 至于配合LiveData可以实现,数据插入后自动通知数据变动,先要研究下LiveData,了解LiveData后再来看看
+看下queryAll的实现
+```
+@Override
+  public LiveData<List<ChatMessageBean>> queryAll(String meetID) {
+    final String _sql = "select * from tb_chat_message where groupID=? order by insertTime";
+    final RoomSQLiteQuery _statement = RoomSQLiteQuery.acquire(_sql, 1);
+    int _argIndex = 1;
+    if (meetID == null) {
+      _statement.bindNull(_argIndex);
+    } else {
+      _statement.bindString(_argIndex, meetID);
+    }
+    return new ComputableLiveData<List<ChatMessageBean>>() {
+      private Observer _observer;
+
+      @Override
+      protected List<ChatMessageBean> compute() {
+        if (_observer == null) {
+          _observer = new Observer("tb_chat_message") {
+            @Override
+            public void onInvalidated(@NonNull Set<String> tables) {
+              invalidate();
+            }
+          };
+          __db.getInvalidationTracker().addWeakObserver(_observer);
+        }
+        ....
+          return _result;
+        } finally {
+          _cursor.close();
+        }
+      }
+
+      @Override
+      protected void finalize() {
+        _statement.release();
+      }
+    }.getLiveData();
+  }
+```
+
+重点看ComputableLiveData的实现,其中有
+```
+ if (_observer == null) {
+          _observer = new Observer("tb_chat_message") {
+            @Override
+            public void onInvalidated(@NonNull Set<String> tables) {
+              invalidate();
+            }
+          };
+          __db.getInvalidationTracker().addWeakObserver(_observer);
+    }
+```
+关注InvalidationTracker
+
+```
+   @WorkerThread
+    public void addObserver(@NonNull Observer observer) {
+        final String[] tableNames = observer.mTables;
+        int[] tableIds = new int[tableNames.length];
+        final int size = tableNames.length;
+        long[] versions = new long[tableNames.length];
+
+        // TODO sync versions ?
+        for (int i = 0; i < size; i++) {
+            Integer tableId = mTableIdLookup.get(tableNames[i].toLowerCase(Locale.US));
+            if (tableId == null) {
+                throw new IllegalArgumentException("There is no table with name " + tableNames[i]);
+            }
+            tableIds[i] = tableId;
+            versions[i] = mMaxVersion;
+        }
+        ObserverWrapper wrapper = new ObserverWrapper(observer, tableIds, tableNames, versions);
+        ObserverWrapper currentObserver;
+        synchronized (mObserverMap) {
+            currentObserver = mObserverMap.putIfAbsent(observer, wrapper);
+        }
+        if (currentObserver == null && mObservedTableTracker.onAdded(tableIds)) {
+            syncTriggers();
+        }
+    }
+```
+重点就在syncTriggers,会在beginTransaction的时候被调用
+```
+    /**
+     * Called by RoomDatabase before each beginTransaction call.
+     * <p>
+     * It is important that pending trigger changes are applied to the database before any query
+     * runs. Otherwise, we may miss some changes.
+     * <p>
+     * This api should eventually be public.
+     */
+    void syncTriggers() {
+        if (!mDatabase.isOpen()) {
+            return;
+        }
+        syncTriggers(mDatabase.getOpenHelper().getWritableDatabase());
+    }
+
+
+    void syncTriggers(SupportSQLiteDatabase database) {
+        if (database.inTransaction()) {
+            // we won't run this inside another transaction.
+            return;
+        }
+        try {
+            // This method runs in a while loop because while changes are synced to db, another
+            // runnable may be skipped. If we cause it to skip, we need to do its work.
+            while (true) {
+                Lock closeLock = mDatabase.getCloseLock();
+                closeLock.lock();
+                try {
+                    // there is a potential race condition where another mSyncTriggers runnable
+                    // can start running right after we get the tables list to sync.
+                    final int[] tablesToSync = mObservedTableTracker.getTablesToSync();
+                    if (tablesToSync == null) {
+                        return;
+                    }
+                    final int limit = tablesToSync.length;
+                    try {
+                        database.beginTransaction();
+                        for (int tableId = 0; tableId < limit; tableId++) {
+                            switch (tablesToSync[tableId]) {
+                                case ObservedTableTracker.ADD:
+                                    startTrackingTable(database, tableId);
+                                    break;
+                                case ObservedTableTracker.REMOVE:
+                                    stopTrackingTable(database, tableId);
+                                    break;
+                            }
+                        }
+                        database.setTransactionSuccessful();
+                    } finally {
+                        database.endTransaction();
+                    }
+                    mObservedTableTracker.onSyncCompleted();
+                } finally {
+                    closeLock.unlock();
+                }
+            }
+        } catch (IllegalStateException | SQLiteException exception) {
+            // may happen if db is closed. just log.
+            Log.e(Room.LOG_TAG, "Cannot run invalidation tracker. Is the db closed?",
+                    exception);
+        }
+    }
+```
+接着就到了startTrackingTable,这里面新建了个触发器,原来sqlite也是支持触发器的
+```
+private void startTrackingTable(SupportSQLiteDatabase writableDb, int tableId) {
+        final String tableName = mTableNames[tableId];
+        StringBuilder stringBuilder = new StringBuilder();
+        for (String trigger : TRIGGERS) {
+            stringBuilder.setLength(0);
+            stringBuilder.append("CREATE TEMP TRIGGER IF NOT EXISTS ");
+            appendTriggerName(stringBuilder, tableName, trigger);
+            stringBuilder.append(" AFTER ")
+                    .append(trigger)
+                    .append(" ON `")
+                    .append(tableName)
+                    .append("` BEGIN INSERT OR REPLACE INTO ")
+                    .append(UPDATE_TABLE_NAME)
+                    .append(" VALUES(null, ")
+                    .append(tableId)
+                    .append("); END");
+            writableDb.execSQL(stringBuilder.toString());
+        }
+    }
+```
+会在表更新,删除,插入的时候生成名为   room_table_modification_trigger_表名_触发类型 的这个条目(这个sql有点没看懂,可能有误)
+
+目光回到endTransaction
+```
+ public void endTransaction() {
+        mOpenHelper.getWritableDatabase().endTransaction();
+        if (!inTransaction()) {
+            // enqueue refresh only if we are NOT in a transaction. Otherwise, wait for the last
+            // endTransaction call to do it.
+            mInvalidationTracker.refreshVersionsAsync();
+        }
+    }
+
+
+public void refreshVersionsAsync() {
+        // TODO we should consider doing this sync instead of async.
+        if (mPendingRefresh.compareAndSet(false, true)) {
+            ArchTaskExecutor.getInstance().executeOnDiskIO(mRefreshRunnable);
+        }
+}
+```
+在mRefreshRunnable中有个checkUpdatedTable方法
+```
+Runnable mRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            final Lock closeLock = mDatabase.getCloseLock();
+            boolean hasUpdatedTable = false;
+            try {
+                closeLock.lock();
+
+             ......
+                if (mDatabase.mWriteAheadLoggingEnabled) {
+                    // This transaction has to be on the underlying DB rather than the RoomDatabase
+                    // in order to avoid a recursive loop after endTransaction.
+                    SupportSQLiteDatabase db = mDatabase.getOpenHelper().getWritableDatabase();
+                    try {
+                        db.beginTransaction();
+                        hasUpdatedTable = checkUpdatedTable();
+                        db.setTransactionSuccessful();
+                    } finally {
+                        db.endTransaction();
+                    }
+                } else {
+                    hasUpdatedTable = checkUpdatedTable();
+                }
+        
+            if (hasUpdatedTable) {
+                synchronized (mObserverMap) {
+                    for (Map.Entry<Observer, ObserverWrapper> entry : mObserverMap) {
+                        entry.getValue().checkForInvalidation(mTableVersions);
+                    }
+                }
+            }
+        }
+
+        private boolean checkUpdatedTable() {
+            boolean hasUpdatedTable = false;
+            Cursor cursor = mDatabase.query(SELECT_UPDATED_TABLES_SQL, mQueryArgs);
+            //noinspection TryFinallyCanBeTryWithResources
+            try {
+                while (cursor.moveToNext()) {
+                    final long version = cursor.getLong(0);
+                    final int tableId = cursor.getInt(1);
+
+                    mTableVersions[tableId] = version;
+                    hasUpdatedTable = true;
+                    // result is ordered so we can safely do this assignment
+                    mMaxVersion = version;
+                }
+            } finally {
+                cursor.close();
+            }
+            return hasUpdatedTable;
+        }
+    };
+```
+流程就是事务结束的时候,拉起一个线程检查下是否有table更新,就是通过之前触发器来判断是否有新的更新,如果有新的更新,就调用checkForInvalidation,最终调用mObserver.onInvalidated(invalidatedTables);这就返回到了queryAll里面,
+```
+        if (_observer == null) {
+          _observer = new Observer("tb_chat_message") {
+            @Override
+            public void onInvalidated(@NonNull Set<String> tables) {
+              invalidate();
+            }
+          };
+          __db.getInvalidationTracker().addWeakObserver(_observer);
+        }
+```
+invalidate会调用ComputableLiveData的compute方法,并抛出最新的数据,这样就可以实现数据的插入通知观察方法
