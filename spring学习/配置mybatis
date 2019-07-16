@@ -170,3 +170,100 @@ public interface BookDao {
 
 }
 ```
+
+
+
+mybtais好了后可以使用更方便的mybatis-plus
+
+
+在mybatis的配置基础上加上
+```
+	<dependency>
+			<groupId>com.baomidou</groupId>
+			<artifactId>mybatis-plus-boot-starter</artifactId>
+			<version>3.1.1</version>
+		</dependency>
+```
+
+使用pojo
+```
+
+@TableName("tb_blog")
+public class Blog {
+    private long id;
+    private String title;
+    private String author;
+
+
+    public long getId() {
+        return id;
+    }
+
+    public void setId(long id) {
+        this.id = id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public String getAuthor() {
+        return author;
+    }
+
+    public void setAuthor(String author) {
+        this.author = author;
+    }
+}
+```
+
+定义mapper
+```
+public interface BlogMapper extends BaseMapper<Blog> {
+}
+```
+
+这样就可以了
+搞一个测试controller
+```
+
+@RestController
+@RequestMapping("/blog")
+public class BlogController {
+
+    @Autowired
+    BlogMapper blogMapper;
+
+    @RequestMapping("insert")
+    public String insert(@RequestParam("title") String title,@RequestParam("author") String author){
+        Blog blog = new Blog();
+        blog.setTitle(title);
+        blog.setAuthor(author);
+        int result = blogMapper.insert(blog);
+        return "ok " + result;
+    }
+
+
+    @RequestMapping("list")
+    public List<Blog> list(){
+       return  blogMapper.selectList(null);
+    }
+}
+```
+
+如果没有开启MapperScan还要开启下
+```
+@SpringBootApplication
+@MapperScan("com.example.demo.mapper")
+public class DemoApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(DemoApplication.class, args);
+	}
+
+}
+```
